@@ -1,5 +1,4 @@
-"""Background services and integration clients."""
-
+from .market_data import Candle, MarketDataClient
 from .search import SearchSignals, WebSearchClient
 
-__all__ = ["SearchSignals", "WebSearchClient"]
+__all__ = ["Candle", "MarketDataClient", "SearchSignals", "WebSearchClient"]
