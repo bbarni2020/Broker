@@ -9,48 +9,54 @@ const palette = {
   border: getComputedStyle(document.documentElement).getPropertyValue('--border').trim(),
 };
 
-const API_BASE = (window.API_BASE || '').replace(/\/$/, '');
-
 function formatNumber(v, digits=2) { return Number(v).toFixed(digits); }
 function formatPct(v) { return (Number(v) * 100).toFixed(1) + '%'; }
 
 async function fetchJson(url) {
-  const res = await fetch(`${API_BASE}${url}`);
-  if (!res.ok) throw new Error('Request failed');
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Request failed: ${res.status} ${url}`);
   return await res.json();
 }
 
 async function loadData() {
-  const [candles, trades, stats, drawdown, strategies, symbols, adminSymbols, rules] = await Promise.all([
-    fetchJson('/api/candles'),
-    fetchJson('/api/trades'),
-    fetchJson('/api/stats'),
-    fetchJson('/api/drawdown'),
-    fetchJson('/api/strategy-performance'),
-    fetchJson('/api/symbol-performance'),
-    fetchJson('/api/admin/symbols'),
-    fetchJson('/api/admin/rules'),
-  ]);
-  renderCandles(candles);
-  renderDrawdown(drawdown);
-  renderWinLoss(stats);
-  renderStrategies(strategies);
-  renderSymbols(symbols);
-  renderTrades(trades);
-  renderMetrics(stats);
-  renderAdminSymbols(adminSymbols);
-  fillRulesForm(rules);
+  try {
+    const [candles, trades, stats, drawdown, strategies, symbols, adminSymbols, rules] = await Promise.all([
+      fetchJson('/api/candles'),
+      fetchJson('/api/trades'),
+      fetchJson('/api/stats'),
+      fetchJson('/api/drawdown'),
+      fetchJson('/api/strategy-performance'),
+      fetchJson('/api/symbol-performance'),
+      fetchJson('/api/admin/symbols'),
+      fetchJson('/api/admin/rules'),
+    ]);
+    renderCandles(candles);
+    renderDrawdown(drawdown);
+    renderWinLoss(stats);
+    renderStrategies(strategies);
+    renderSymbols(symbols);
+    renderTrades(trades);
+    renderMetrics(stats);
+    renderAdminSymbols(adminSymbols);
+    fillRulesForm(rules);
+  } catch (err) {
+    console.error('Dashboard load error:', err);
+  }
 }
 
 function renderCandles(data) {
   const ctx = document.getElementById('candleChart');
-  const parsed = data.map(d => ({x: new Date(d.t), o: d.o, h: d.h, l: d.l, c: d.c}));
+  const times = data.map(d => new Date(d.t).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}));
+  const closes = data.map(d => d.c);
   const gradient = ctx.getContext('2d').createLinearGradient(0,0,0,300);
   gradient.addColorStop(0, palette.accent);
   gradient.addColorStop(1, palette.accent2);
   new Chart(ctx, {
-    type: 'candlestick',
-    data: { datasets: [{ label: 'Price', data: parsed, borderColor: gradient, color: { up: palette.positive, down: palette.negative, unchanged: palette.accent } }] },
+    type: 'line',
+    data: { 
+      labels: times,
+      datasets: [{ label: 'Price', data: closes, borderColor: palette.accent, backgroundColor: 'rgba(139, 92, 246, 0.1)', tension: 0.25, fill: true }] 
+    },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -208,7 +214,7 @@ function renderAdminSymbols(symbols) {
     const toggle = document.createElement('button');
     toggle.textContent = s.enabled ? 'Disable' : 'Enable';
     toggle.addEventListener('click', async () => {
-      await fetch(`${API_BASE}/api/admin/symbols/${encodeURIComponent(s.symbol)}`, {
+      await fetch(`/api/admin/symbols/${encodeURIComponent(s.symbol)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !s.enabled }),
@@ -218,7 +224,7 @@ function renderAdminSymbols(symbols) {
     const remove = document.createElement('button');
     remove.textContent = 'Remove';
     remove.addEventListener('click', async () => {
-      await fetch(`${API_BASE}/api/admin/symbols/${encodeURIComponent(s.symbol)}`, { method: 'DELETE' });
+      await fetch(`/api/admin/symbols/${encodeURIComponent(s.symbol)}`, { method: 'DELETE' });
       loadData().catch(() => {});
     });
     pill.appendChild(label);
@@ -235,7 +241,7 @@ function bindSymbolForm() {
     e.preventDefault();
     const symbol = input.value.trim();
     if (!symbol) return;
-    await fetch(`${API_BASE}/api/admin/symbols`, {
+    await fetch('/api/admin/symbols', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol }),
@@ -263,7 +269,7 @@ function bindRulesForm() {
       max_trades_per_day: parseInt(form.max_trades_per_day.value, 10),
       cooldown_seconds: parseInt(form.cooldown_seconds.value, 10),
     };
-    await fetch(`${API_BASE}/api/admin/rules`, {
+    await fetch('/api/admin/rules', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -274,4 +280,4 @@ function bindRulesForm() {
 
 bindSymbolForm();
 bindRulesForm();
-loadData().catch(() => {});
+loadData().catch((err) => console.error('Initial load failed:', err));

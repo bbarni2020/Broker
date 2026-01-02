@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, func
 
 from .db import Base
 
@@ -21,4 +21,5 @@ class DashboardSecret(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_secret = Column(String, nullable=False)
     otp_secret = Column(String(64), nullable=False)
+    provisioning_link_shown = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

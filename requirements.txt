@@ -2,7 +2,7 @@ fastapi==0.110.3
 uvicorn[standard]==0.30.6
 SQLAlchemy==2.0.45
 alembic==1.13.2
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.10
 pandas==2.3.3
 passlib[argon2]==1.7.4
 argon2-cffi==25.1.0

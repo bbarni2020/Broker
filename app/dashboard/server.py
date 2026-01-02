@@ -159,7 +159,6 @@ def create_dashboard_app(data_source: DashboardDataSource | None = None) -> Flas
     created_secret = False
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SECURE"] = False
-    app.config["API_BASE_URL"] = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
 
     engine = create_engine(settings.database_url, future=True, pool_pre_ping=True)
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
@@ -220,7 +219,7 @@ def create_dashboard_app(data_source: DashboardDataSource | None = None) -> Flas
     @app.route("/")
     @require_auth
     def index():
-        return render_template("dashboard.html", api_base_url=app.config["API_BASE_URL"])
+        return render_template("dashboard.html")
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -237,10 +236,14 @@ def create_dashboard_app(data_source: DashboardDataSource | None = None) -> Flas
                 )
             session["dashboard_auth"] = True
             return redirect(url_for("index"))
+        db = get_session()
+        record = db.query(DashboardSecret).order_by(DashboardSecret.id.asc()).first()
         show_link = False
-        if not session.get("otp_link_seen") and app.config.get("OTP_PROVISIONING_URI"):
+        if record and not record.provisioning_link_shown and app.config.get("OTP_PROVISIONING_URI"):
             show_link = True
-            session["otp_link_seen"] = True
+            record.provisioning_link_shown = True
+            db.commit()
+        db.close()
         return render_template(
             "login.html",
             error=None,
