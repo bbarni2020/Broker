@@ -14,6 +14,7 @@ from .guides import GuideEvaluation, GuidePayload, GuideService
 from .market_data import Candle, MarketDataClient
 from .risk import PositionSize, RiskGovernor, RiskGovernorState
 from .search import SearchSignals, WebSearchClient
+from .symbols import SymbolService
 
 __all__ = [
     "AIEvaluationResult",
@@ -35,6 +36,7 @@ __all__ = [
     "SearchSignals",
     "StopLoss",
     "TakeProfit",
+    "SymbolService",
     "TimeInForce",
     "WebSearchClient",
 ]

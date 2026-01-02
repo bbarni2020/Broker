@@ -1,6 +1,5 @@
-"""Database models and schemas."""
-
 from .db import Base
 from .guide import Guide, StrategyGuideLink
+from .symbol import Symbol
 
-__all__ = ["Base", "Guide", "StrategyGuideLink"]
+__all__ = ["Base", "Guide", "StrategyGuideLink", "Symbol"]
