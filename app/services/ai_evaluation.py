@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from app.ai import AIClient, AIDecision
-from app.logging import log_decision
+from app.logging import AuditLogger, log_decision
 from app.models import Guide
 from app.services.guides import GuideEvaluation
 from app.utils import ValidationResult
@@ -27,9 +27,11 @@ class AIEvaluationService:
         self,
         ai_client: AIClient,
         confidence_threshold: float = 0.7,
+        audit_logger: AuditLogger | None = None,
     ) -> None:
         self.ai_client = ai_client
         self.confidence_threshold = confidence_threshold
+        self.audit_logger = audit_logger
 
     async def evaluate(
         self,
@@ -50,6 +52,21 @@ class AIEvaluationService:
                 f"Failed validation: {', '.join(validation_result.hard_rule_violations)}",
                 metadata={"violations": list(validation_result.hard_rule_violations)},
             )
+            if self.audit_logger:
+                self.audit_logger.record_rule_check(
+                    symbol,
+                    "level_1_validation",
+                    False,
+                    {"violations": list(validation_result.hard_rule_violations)},
+                )
+                self.audit_logger.record_decision(
+                    symbol,
+                    "level_1_rejection",
+                    "NO_TRADE",
+                    "Failed validation",
+                    confidence=0.0,
+                    context={"violations": list(validation_result.hard_rule_violations)},
+                )
             return AIEvaluationResult(
                 symbol=symbol,
                 passed_level_1=False,
@@ -74,6 +91,16 @@ class AIEvaluationService:
                 "NO_TRADE",
                 f"AI service error: {str(exc)}",
             )
+            if self.audit_logger:
+                self.audit_logger.record_rule_check(symbol, "ai_service", False, {"error": str(exc)})
+                self.audit_logger.record_decision(
+                    symbol,
+                    "ai_error",
+                    "NO_TRADE",
+                    "AI service error",
+                    confidence=0.0,
+                    context={"error": str(exc)},
+                )
             raise RuntimeError(f"AI evaluation failed for {symbol}") from exc
 
         guide_aligned = guide_evaluation.allowed if guide_evaluation else True
@@ -101,6 +128,47 @@ class AIEvaluationService:
                 "risk_flags": list(ai_decision.risk_flags),
             },
         )
+        if self.audit_logger:
+            self.audit_logger.record_ai_output(
+                symbol,
+                ai_decision.decision,
+                ai_decision.confidence,
+                ai_decision.matched_rules,
+                ai_decision.violated_rules,
+                ai_decision.risk_flags,
+                ai_decision.explanation,
+                ai_payload,
+            )
+            self.audit_logger.record_rule_check(
+                symbol,
+                "guide_alignment",
+                guide_aligned,
+                {
+                    "unmet_hard_rules": list(guide_evaluation.unmet_hard_rules) if guide_evaluation else [],
+                    "matched_soft_rules": list(guide_evaluation.matched_soft_rules) if guide_evaluation else [],
+                },
+            )
+            self.audit_logger.record_rule_check(
+                symbol,
+                "confidence_threshold",
+                not rejected_by_confidence,
+                {"confidence": ai_decision.confidence, "threshold": self.confidence_threshold},
+            )
+            self.audit_logger.record_decision(
+                symbol,
+                "level_2_evaluation",
+                ai_decision.decision if passed else "NO_TRADE",
+                "AI decision",
+                confidence=ai_decision.confidence,
+                context={
+                    "guide_aligned": guide_aligned,
+                    "passed_threshold": not rejected_by_confidence,
+                    "weak_conditions": weak_conditions,
+                    "matched_rules": list(ai_decision.matched_rules),
+                    "violated_rules": list(ai_decision.violated_rules),
+                    "risk_flags": list(ai_decision.risk_flags),
+                },
+            )
 
         return AIEvaluationResult(
             symbol=symbol,

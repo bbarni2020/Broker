@@ -1,1 +1,3 @@
-"""Authentication, authorization, and 2FA utilities."""
+from .service import AuthError, AuthService, RateLimiter
+
+__all__ = ["AuthError", "AuthService", "RateLimiter"]

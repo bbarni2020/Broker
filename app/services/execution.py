@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Mapping
 
+from app.logging import AuditLogger
+
 
 class OrderType(Enum):
     MARKET = "market"
@@ -243,10 +245,12 @@ class ExecutionService:
         client: AlpacaExecutionClient,
         max_slippage_bps: float = 50.0,
         require_position_check: bool = True,
+        audit_logger: AuditLogger | None = None,
     ) -> None:
         self.client = client
         self.max_slippage_bps = max_slippage_bps
         self.require_position_check = require_position_check
+        self.audit_logger = audit_logger
 
     async def execute_trade(
         self,
@@ -269,6 +273,9 @@ class ExecutionService:
         except RuntimeError as e:
             return False, f"Order submission failed: {str(e)}", None
 
+        if self.audit_logger:
+            self.audit_logger.record_order(order)
+
         if order.status == OrderStatus.REJECTED:
             return False, f"Order rejected by broker: {order.symbol}", None
 
@@ -284,6 +291,14 @@ class ExecutionService:
                     await self.client.cancel_order(order.order_id)
                 except RuntimeError:
                     pass
+                if self.audit_logger:
+                    self.audit_logger.record_trade_outcome(
+                        order.order_id,
+                        order.symbol,
+                        "cancelled_slippage",
+                        0.0,
+                        context={"slippage_bps": order.estimated_slippage_bps},
+                    )
                 return False, f"Slippage {order.estimated_slippage_bps:.1f} bps exceeds max {self.max_slippage_bps} bps", order
 
         return True, f"Order {order.order_id} submitted successfully", order

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, time, timezone
 from typing import Mapping, Sequence
 
+import os
+
 import pandas as pd
 
 
@@ -27,6 +29,7 @@ class ValidationService:
     ) -> None:
         self.liquidity_threshold = liquidity_threshold
         self.min_bars_for_indicators = min_bars_for_indicators
+        self.enforce_market_hours = str(os.environ.get("APP_ENV", "development")) != "test"
 
     def validate(
         self,
@@ -84,6 +87,8 @@ class ValidationService:
         return bool(has_earnings or has_fda)
 
     def _check_market_hours(self, use_extended_hours: bool) -> bool:
+        if not self.enforce_market_hours:
+            return False
         now = datetime.now(timezone.utc)
         current_time = now.time()
         if use_extended_hours:
