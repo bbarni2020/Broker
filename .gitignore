@@ -24,3 +24,4 @@ htmlcov/
 *.pem
 *.key
 *.crt
+*.md
