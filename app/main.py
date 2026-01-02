@@ -9,7 +9,6 @@ def create_app() -> FastAPI:
     settings = load_settings()
     app = FastAPI(title="Broker API", version="0.1.0")
     app.state.settings = settings
-    # Routers are added in their respective modules to avoid circular imports.
     return app
 
 

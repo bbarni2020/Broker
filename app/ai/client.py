@@ -1,0 +1,182 @@
+"""AI client compatible with OpenAI-style chat completions."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Any, Mapping, Sequence
+
+BASE_URL = "https://ai.hackclub.com"
+MODEL = "gpt-4.1-mini"
+DECISIONS = {"LONG", "SHORT", "NO_TRADE"}
+
+
+@dataclass(frozen=True)
+class AIDecision:
+    decision: str
+    confidence: float
+    matched_rules: Sequence[str]
+    violated_rules: Sequence[str]
+    risk_flags: Sequence[str]
+    explanation: str
+
+    @staticmethod
+    def from_dict(payload: Mapping[str, Any]) -> "AIDecision":
+        if not isinstance(payload, Mapping):
+            raise ValueError("AI response payload must be a mapping")
+
+        decision = payload.get("decision")
+        confidence = payload.get("confidence")
+        matched_rules = payload.get("matched_rules")
+        violated_rules = payload.get("violated_rules")
+        risk_flags = payload.get("risk_flags")
+        explanation = payload.get("explanation")
+
+        if decision not in DECISIONS:
+            raise ValueError("Invalid decision value")
+        try:
+            confidence_value = float(confidence)
+        except (TypeError, ValueError):
+            raise ValueError("Confidence must be a float") from None
+        if not 0.0 <= confidence_value <= 1.0:
+            raise ValueError("Confidence must be between 0 and 1")
+
+        for name, value in (
+            ("matched_rules", matched_rules),
+            ("violated_rules", violated_rules),
+            ("risk_flags", risk_flags),
+        ):
+            if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+                raise ValueError(f"{name} must be a sequence of strings")
+            if any(not isinstance(item, str) for item in value):
+                raise ValueError(f"{name} must contain strings only")
+
+        if not isinstance(explanation, str) or not explanation:
+            raise ValueError("Explanation must be a non-empty string")
+
+        return AIDecision(
+            decision=decision,
+            confidence=confidence_value,
+            matched_rules=tuple(matched_rules),
+            violated_rules=tuple(violated_rules),
+            risk_flags=tuple(risk_flags),
+            explanation=explanation,
+        )
+
+
+class AIClient:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = BASE_URL,
+        model: str = MODEL,
+        http_client: Any = None,
+        timeout_seconds: float = 30.0,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.timeout_seconds = timeout_seconds
+        self._http_client = http_client
+
+    async def classify(self, payload: Mapping[str, Any]) -> AIDecision:
+        if not isinstance(payload, Mapping):
+            raise ValueError("Payload must be a mapping")
+        body = self._build_request_body(payload)
+        if self._http_client is not None:
+            response = await self._http_client.post(
+                f"{self.base_url}/v1/chat/completions",
+                headers=self._headers(),
+                json=body,
+                timeout=self.timeout_seconds,
+            )
+        else:
+            response = await asyncio.to_thread(
+                self._post_with_urllib,
+                f"{self.base_url}/v1/chat/completions",
+                body,
+            )
+
+        if response.status_code != 200:
+            raise RuntimeError(f"AI service error {response.status_code}")
+
+        decision_payload = self._extract_decision_payload(response.json())
+        return AIDecision.from_dict(decision_payload)
+
+    def _headers(self) -> Mapping[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _build_request_body(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        return {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_json",
+                            "input_json": payload,
+                        }
+                    ],
+                }
+            ],
+            "response_format": {"type": "json_object"},
+        }
+
+    def _post_with_urllib(self, url: str, body: Mapping[str, Any]):
+        request_body = json.dumps(body).encode("utf-8")
+        request = urllib.request.Request(url, data=request_body, headers=dict(self._headers()))
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                status = response.getcode()
+                content_bytes = response.read()
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            content_bytes = exc.read()
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"AI service unreachable: {exc.reason}") from exc
+
+        try:
+            content_json = json.loads(content_bytes.decode("utf-8"))
+        except json.JSONDecodeError:
+            content_json = {}
+
+        return _SimpleResponse(status, content_json)
+
+    def _extract_decision_payload(self, response_json: Mapping[str, Any]) -> Mapping[str, Any]:
+        if not isinstance(response_json, Mapping):
+            raise ValueError("AI response must be a mapping")
+        choices = response_json.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("AI response missing choices")
+        message = choices[0].get("message")
+        if not isinstance(message, Mapping):
+            raise ValueError("AI response missing message")
+        content = message.get("content")
+        if isinstance(content, str):
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError as exc:
+                raise ValueError("AI content is not valid JSON") from exc
+        if isinstance(content, list) and content:
+            first = content[0]
+            if isinstance(first, Mapping) and first.get("type") == "output_json":
+                output = first.get("output_json")
+                if isinstance(output, Mapping):
+                    return output
+        raise ValueError("AI content is missing structured JSON")
+
+
+class _SimpleResponse:
+    def __init__(self, status_code: int, payload: Mapping[str, Any]):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self) -> Mapping[str, Any]:
+        return self._payload
