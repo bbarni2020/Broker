@@ -1,1 +1,3 @@
-"""Visualization and user-facing dashboard components."""
+from app.dashboard.server import create_dashboard_app
+
+__all__ = ["create_dashboard_app"]

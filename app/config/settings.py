@@ -37,6 +37,8 @@ class Settings:
     jwt_secret: str
     otp_issuer_name: str
     app_env: str
+    trading_mode: str
+    trading_live_confirm: bool
 
 
 def load_settings(env: Mapping[str, str | None] | None = None) -> Settings:
@@ -58,7 +60,14 @@ def load_settings(env: Mapping[str, str | None] | None = None) -> Settings:
         jwt_secret=_read_env_var("JWT_SECRET", source_env),
         otp_issuer_name=_read_env_var("OTP_ISSUER_NAME", source_env),
         app_env=app_env,
+        trading_mode=str(source_env.get("TRADING_MODE", "paper")).strip().lower() or "paper",
+        trading_live_confirm=str(source_env.get("TRADING_LIVE_CONFIRM", "false")).strip().lower() in ("1", "true", "yes"),
     )
+
+    if settings.trading_mode not in ("paper", "live"):
+        raise RuntimeError("Invalid TRADING_MODE")
+    if settings.trading_mode == "live" and not settings.trading_live_confirm:
+        raise RuntimeError("Live trading requires TRADING_LIVE_CONFIRM=true")
 
     logger.info("Loaded application settings for env=%s", settings.app_env)
     return settings

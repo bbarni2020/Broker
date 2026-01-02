@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trading Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@4.3.0/dist/chartjs-chart-financial.min.js"></script>
+<script>
+  window.API_BASE = "{{ api_base_url }}";
+</script>
+</head>
+<body>
+<header>
+  <div class="title">Trading Dashboard</div>
+  <div class="subtitle">Live view of performance and risk</div>
+  <a href="/logout" class="pill">Logout</a>
+</header>
+<div class="grid">
+  <div class="card span-2 tall">
+    <h3>Candlesticks</h3>
+    <div class="chart-container"><canvas id="candleChart"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>Drawdown</h3>
+    <div class="chart-container"><canvas id="drawdownChart"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>Win / Loss</h3>
+    <div class="chart-container"><canvas id="winLossChart"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>Strategy Performance</h3>
+    <div class="chart-container"><canvas id="strategyChart"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>Symbol Performance</h3>
+    <div class="chart-container"><canvas id="symbolChart"></canvas></div>
+  </div>
+  <div class="card span-2">
+    <h3>Trades</h3>
+    <div class="table-wrap">
+      <table class="table" id="tradesTable">
+        <thead>
+          <tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Realized P&L</th><th>Status</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Totals</h3>
+    <div class="metrics" id="metricGrid"></div>
+  </div>
+  <div class="card">
+    <h3>Symbols</h3>
+    <form class="form-inline" id="symbolForm">
+      <input type="text" id="symbolInput" placeholder="Add symbol" maxlength="16" required />
+      <button type="submit">Add</button>
+    </form>
+    <div class="pill-row" id="symbolList"></div>
+  </div>
+  <div class="card">
+    <h3>Base Rules</h3>
+    <form id="rulesForm">
+      <div class="form-grid">
+        <label>Max risk per trade
+          <input type="number" step="0.0001" min="0" max="1" name="max_risk_per_trade" required />
+        </label>
+        <label>Max daily loss
+          <input type="number" step="0.0001" min="0" max="1" name="max_daily_loss" required />
+        </label>
+        <label>Max trades per day
+          <input type="number" min="0" name="max_trades_per_day" required />
+        </label>
+        <label>Cooldown seconds
+          <input type="number" min="0" name="cooldown_seconds" required />
+        </label>
+      </div>
+      <div class="save-row"><button type="submit">Save rules</button></div>
+    </form>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
