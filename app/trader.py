@@ -54,7 +54,7 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     settings = load_settings()
     allow_exec = should_allow_execution(settings.trading_mode, settings.trading_live_confirm)
-    poll_seconds = int(os.environ.get("TRADER_POLL_INTERVAL", "60"))
+    poll_seconds = max(30, int(os.environ.get("TRADER_POLL_INTERVAL", "30")))
     env_symbols = _symbols_from_env(os.environ.get("TRADER_SYMBOLS"))
     use_extended_hours = str(os.environ.get("TRADER_USE_EXTENDED_HOURS", "false")).strip().lower() in ("1", "true", "yes")
 

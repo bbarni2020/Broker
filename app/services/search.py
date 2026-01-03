@@ -36,13 +36,41 @@ class WebSearchClient:
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
 
-    async def search(self, query: str, freshness: str = "pd", count: int = 10) -> SearchSignals:
+    async def search(
+        self,
+        query: str,
+        freshness: str = "pd",
+        count: int = 10,
+        offset: int = 0,
+        country: str = "US",
+        search_lang: str = "en",
+        ui_lang: str = "en-US",
+        safesearch: str = "moderate",
+        text_decorations: bool = True,
+        spellcheck: bool = True,
+        result_filter: str | None = None,
+    ) -> SearchSignals:
         if not isinstance(query, str) or not query.strip():
             raise ValueError("Query must be a non-empty string")
-        if count <= 0:
+        if count <= 0 or count > 20:
             raise ValueError("Count must be positive")
+        if offset < 0 or offset > 9:
+            raise ValueError("Offset out of range")
 
-        params = {"q": query, "freshness": freshness, "count": count}
+        params = {
+            "q": query,
+            "freshness": freshness,
+            "count": count,
+            "offset": offset,
+            "country": country,
+            "search_lang": search_lang,
+            "ui_lang": ui_lang,
+            "safesearch": safesearch,
+            "text_decorations": str(text_decorations).lower(),
+            "spellcheck": str(spellcheck).lower(),
+        }
+        if result_filter:
+            params["result_filter"] = result_filter
 
         if self._http_client is not None:
             response = await self._http_client.get(
@@ -95,6 +123,15 @@ class WebSearchClient:
     def _extract_results(self, payload: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
         if not isinstance(payload, Mapping):
             return ()
+        buckets = []
+        for key in ("web", "news", "discussions"):
+            section = payload.get(key)
+            if isinstance(section, Mapping):
+                items = section.get("results")
+                if isinstance(items, Sequence):
+                    buckets.extend([item for item in items if isinstance(item, Mapping)])
+        if buckets:
+            return tuple(buckets)
         value = payload.get("value")
         if isinstance(value, Sequence):
             return tuple(item for item in value if isinstance(item, Mapping))
@@ -125,6 +162,7 @@ class WebSearchClient:
             "rate hike",
             "interest rate",
         )
+        social_terms = ("reddit", "stocktwits", "twitter", "x.com", "discord", "social")
 
         for item in results:
             text = self._result_text(item)
@@ -137,7 +175,7 @@ class WebSearchClient:
                 fda_hit = True
             if not macro_hit and self._contains_any(lower, macro_terms):
                 macro_hit = True
-            if self._contains_any(lower, ("unusual activity", "surge", "spike")):
+            if self._contains_any(lower, ("unusual activity", "surge", "spike")) or self._contains_any(lower, social_terms):
                 unusual_hit = True
 
         matched = []
@@ -168,7 +206,9 @@ class WebSearchClient:
     def _result_text(self, item: Mapping[str, Any]) -> str:
         title = str(item.get("title", ""))
         snippet = str(item.get("snippet", ""))
-        return f"{title} {snippet}".strip()
+        body = str(item.get("description", ""))
+        discussion = str(item.get("body", ""))
+        return " ".join(part for part in (title, snippet, body, discussion) if part).strip()
 
 
 class _SimpleResponse:

@@ -17,7 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import load_settings
-from app.models import Base, BaseRules, DashboardSecret, OrderLog, Symbol, TradeOutcomeLog
+from app.models import Base, BaseRules, DashboardSecret, DecisionLog, OrderLog, Symbol, TradeOutcomeLog
 from app.services.symbols import SymbolService
 
 
@@ -59,6 +59,9 @@ class DashboardDataSource:
         raise NotImplementedError
 
     def symbol_performance(self) -> Iterable[Mapping[str, float | str]]:
+        raise NotImplementedError
+
+    def rejections(self) -> Iterable[Mapping[str, str | float | None]]:
         raise NotImplementedError
 
 
@@ -179,6 +182,31 @@ class DatabaseDataSource(DashboardDataSource):
                 }
             )
         return result
+
+    def rejections(self) -> Iterable[Mapping[str, str | float | None]]:
+        session = self.session_factory()
+        try:
+            rows = (
+                session.query(DecisionLog)
+                .filter(DecisionLog.decision == "NO_TRADE")
+                .order_by(DecisionLog.created_at.desc())
+                .limit(50)
+                .all()
+            )
+        finally:
+            session.close()
+        payload = []
+        for row in rows:
+            payload.append(
+                {
+                    "symbol": row.symbol,
+                    "decision_type": row.decision_type,
+                    "reason": row.reason,
+                    "confidence": row.confidence,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+            )
+        return payload
 
     def _equity_curve(self, outcomes: Iterable[TradeOutcomeLog]) -> list[tuple[datetime, float]]:
         equity = 0.0
@@ -412,6 +440,11 @@ def create_dashboard_app(data_source: DashboardDataSource | None = None) -> Flas
     @require_auth
     def symbol_performance():
         return jsonify(list(resolved_source.symbol_performance()))
+
+    @app.route("/api/rejections")
+    @require_auth
+    def rejections():
+        return jsonify(list(resolved_source.rejections()))
 
     @app.route("/api/admin/symbols", methods=["GET"])
     @require_admin

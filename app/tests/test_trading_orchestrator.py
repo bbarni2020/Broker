@@ -31,7 +31,7 @@ class DummyMarketDataClient:
 
 
 class DummySearchClient:
-    async def search(self, query: str, freshness: str = "pd", count: int = 10) -> SearchSignals:
+    async def search(self, query: str, freshness: str = "pd", count: int = 10, **_: Any) -> SearchSignals:
         return SearchSignals(
             total_results=5,
             earnings=False,
@@ -59,6 +59,7 @@ class DummyAIService:
         price: float,
         volume_24h: float,
         indicators: Mapping[str, float],
+        current_position: float | int = 0,
     ) -> AIEvaluationResult:
         self.last_payload = {
             "symbol": symbol,
@@ -69,6 +70,7 @@ class DummyAIService:
             "price": price,
             "volume_24h": volume_24h,
             "indicators": indicators,
+            "current_position": current_position,
         }
         return AIEvaluationResult(
             symbol=symbol,

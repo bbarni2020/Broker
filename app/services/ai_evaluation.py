@@ -43,6 +43,7 @@ class AIEvaluationService:
         price: float,
         volume_24h: float,
         indicators: Mapping[str, float] | None,
+        current_position: float | int = 0,
     ) -> AIEvaluationResult:
         if not validation_result.passed:
             log_decision(
@@ -79,7 +80,7 @@ class AIEvaluationService:
             )
 
         ai_payload = self._build_payload(
-            symbol, guide_evaluation, search_signals, price, volume_24h, indicators
+            symbol, guide_evaluation, search_signals, price, volume_24h, indicators, current_position
         )
 
         try:
@@ -189,6 +190,7 @@ class AIEvaluationService:
         price: float,
         volume_24h: float,
         indicators: Mapping[str, float] | None,
+        current_position: float | int,
     ) -> Mapping[str, Any]:
         guide_context = {}
         if guide_eval:
@@ -210,6 +212,7 @@ class AIEvaluationService:
             "guide_context": guide_context,
             "search_signals": search_context,
             "indicators": indicator_context,
+            "current_position": current_position,
         }
 
     def _identify_weak_conditions(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
@@ -12,7 +13,7 @@ from app.ai import AIClient
 from app.config import Settings
 from app.indicators.core import atr, ema, rsi, vwap
 from app.logging import AuditLogger, log_decision
-from app.models import Guide, StrategyGuideLink
+from app.models import Guide, OrderLog, StrategyGuideLink, TradeOutcomeLog
 from app.services.ai_evaluation import AIEvaluationResult, AIEvaluationService
 from app.services.execution import (
     AlpacaExecutionClient,
@@ -24,7 +25,7 @@ from app.services.execution import (
     TimeInForce,
 )
 from app.services.guides import GuideEvaluation, GuideService
-from app.services.market_data import Candle, MarketDataClient
+from app.services.market_data import Candle, HybridMarketDataClient, MarketDataClient, YahooMarketDataClient
 from app.services.risk import PositionSize, RiskGovernor
 from app.services.search import SearchSignals, WebSearchClient
 from app.utils import ValidationResult, ValidationService
@@ -79,6 +80,7 @@ class TradingOrchestrator:
         execute: bool = False,
         use_extended_hours: bool = False,
     ) -> TradingDecision:
+        current_position = self._current_position(symbol)
         market_snapshot = await self._load_market_data(symbol)
         if market_snapshot is None:
             validation = ValidationResult(False, ("market_data_error",), ())
@@ -131,6 +133,7 @@ class TradingOrchestrator:
             price=price,
             volume_24h=volume_24h,
             indicators=indicators,
+            current_position=current_position,
         )
 
         risk_ok, risk_reason, position = self.risk_governor.evaluate(
@@ -147,7 +150,11 @@ class TradingOrchestrator:
         execution_reason = risk_reason
         executed_order = None
 
-        if not validation.passed or not risk_ok or not ai_result.passed_level_1:
+        if current_position != 0:
+            final_decision = "NO_TRADE"
+            execution_reason = "existing_position_open"
+            executed_order = None
+        elif not validation.passed or not risk_ok or not ai_result.passed_level_1:
             final_decision = "NO_TRADE"
         elif execute and self.allow_execution and position:
             side = "buy" if ai_result.decision == "LONG" else "sell"
@@ -196,6 +203,27 @@ class TradingOrchestrator:
             execution_reason=execution_reason,
         )
 
+    def _current_position(self, symbol: str) -> int:
+        if not self.session:
+            return 0
+        orders = (
+            self.session.query(OrderLog)
+            .filter(OrderLog.symbol == symbol)
+            .order_by(OrderLog.created_at.desc())
+            .all()
+        )
+        if not orders:
+            return 0
+        outcomes = self.session.query(TradeOutcomeLog).filter(TradeOutcomeLog.symbol == symbol).all()
+        outcome_by_order = {o.order_id: o for o in outcomes}
+        qty = 0
+        for order in orders:
+            if order.order_id in outcome_by_order and outcome_by_order[order.order_id].outcome == "closed":
+                continue
+            direction = 1 if order.side.lower() == "buy" else -1
+            qty += direction * (order.filled_qty or order.qty)
+        return qty
+
     async def _load_market_data(self, symbol: str) -> tuple[Sequence[Candle], Candle] | None:
         timeframe = "1Min"
         start = (datetime.now(timezone.utc) - timedelta(hours=8)).isoformat()
@@ -210,7 +238,12 @@ class TradingOrchestrator:
 
     async def _load_search_signals(self, symbol: str) -> Mapping[str, Any]:
         try:
-            signals = await self.search_client.search(f"{symbol} stock news", freshness="pd", count=10)
+            signals = await self.search_client.search(
+                f"{symbol} stock news",
+                freshness="pd",
+                count=15,
+                result_filter="news,discussions,web",
+            )
             return asdict(signals)
         except Exception:
             return {}
@@ -306,7 +339,15 @@ def build_trading_orchestrator(
 ) -> TradingOrchestrator:
     ai_client = AIClient(settings.ai_api_key, model=settings.ai_model)
     search_client = WebSearchClient(settings.search_api_key)
-    market_data_client = MarketDataClient(settings.alpaca_api_key, settings.alpaca_secret_key)
+    provider = str(os.environ.get("MARKET_DATA_PROVIDER", "hybrid")).strip().lower()
+    alpaca_client = MarketDataClient(settings.alpaca_api_key, settings.alpaca_secret_key)
+    yahoo_client = YahooMarketDataClient()
+    if provider == "alpaca":
+        market_data_client = alpaca_client
+    elif provider == "yahoo":
+        market_data_client = yahoo_client
+    else:
+        market_data_client = HybridMarketDataClient(alpaca_client=alpaca_client, yahoo_client=yahoo_client)
     audit_logger = AuditLogger(session)
     guide_service = GuideService()
     validation_service = ValidationService()

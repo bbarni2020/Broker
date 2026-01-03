@@ -26,7 +26,7 @@ function csrfToken() {
 
 async function loadData() {
   try {
-    const [candles, trades, stats, drawdown, strategies, symbols, adminSymbols, rules] = await Promise.all([
+    const [candles, trades, stats, drawdown, strategies, symbols, adminSymbols, rules, rejections] = await Promise.all([
       fetchJson('/api/candles'),
       fetchJson('/api/trades'),
       fetchJson('/api/stats'),
@@ -35,6 +35,7 @@ async function loadData() {
       fetchJson('/api/symbol-performance'),
       fetchJson('/api/admin/symbols'),
       fetchJson('/api/admin/rules'),
+      fetchJson('/api/rejections'),
     ]);
     renderCandles(candles);
     renderDrawdown(drawdown);
@@ -42,6 +43,7 @@ async function loadData() {
     renderStrategies(strategies);
     renderSymbols(symbols);
     renderTrades(trades);
+    renderRejections(rejections);
     renderMetrics(stats);
     renderAdminSymbols(adminSymbols);
     fillRulesForm(rules);
@@ -222,6 +224,36 @@ function renderTrades(trades) {
         if (t.realized_pnl > 0) td.className = 'badge-positive';
         if (t.realized_pnl < 0) td.className = 'badge-negative';
       }
+      row.appendChild(td);
+    });
+    tbody.appendChild(row);
+  });
+}
+
+function renderRejections(items) {
+  const tbody = document.querySelector('#rejectionsTable tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (!items || items.length === 0) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 4;
+    cell.textContent = 'No rejected decisions yet';
+    row.appendChild(cell);
+    tbody.appendChild(row);
+    return;
+  }
+  items.forEach(item => {
+    const row = document.createElement('tr');
+    const cells = [
+      new Date(item.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+      item.symbol,
+      item.decision_type,
+      item.reason,
+    ];
+    cells.forEach(val => {
+      const td = document.createElement('td');
+      td.textContent = val ?? '';
       row.appendChild(td);
     });
     tbody.appendChild(row);

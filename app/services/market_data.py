@@ -6,9 +6,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping, Sequence
 
+import pandas as pd
+import yfinance as yf
+
 BASE_URL = "https://data.alpaca.markets/v2"
+YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
 
 
 @dataclass(frozen=True)
@@ -140,6 +145,125 @@ class MarketDataClient:
             volume=int(bar["v"]),
             timestamp=str(bar["t"]),
         )
+
+
+class YahooMarketDataClient:
+    def __init__(self, timeout_seconds: float = 15.0) -> None:
+        self.timeout_seconds = timeout_seconds
+
+    async def latest_bar(self, symbol: str, timeframe: str = "1m") -> Candle:
+        bars = await self.historical_bars(symbol, timeframe, range_param="1d", limit=1)
+        if not bars:
+            raise RuntimeError("No latest bar available")
+        return bars[-1]
+
+    async def historical_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: str | None = None,
+        end: str | None = None,
+        limit: int = 1000,
+        range_param: str = "5d",
+    ) -> Sequence[Candle]:
+        interval = self._map_timeframe(timeframe)
+        bars = await asyncio.to_thread(self._fetch_history, symbol, interval, start, end, range_param)
+        if bars.empty:
+            return ()
+        trimmed = bars.tail(limit)
+        candles: list[Candle] = []
+        for ts, row in trimmed.iterrows():
+            try:
+                candles.append(
+                    Candle(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        open=float(row["Open"]),
+                        high=float(row["High"]),
+                        low=float(row["Low"]),
+                        close=float(row["Close"]),
+                        volume=int(row["Volume"]),
+                        timestamp=ts.isoformat(),
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
+        return tuple(candles)
+
+    def _fetch_history(self, symbol: str, interval: str, start: str | None, end: str | None, period: str) -> pd.DataFrame:
+        ticker = yf.Ticker(symbol)
+        kwargs: dict[str, Any] = {"interval": interval, "auto_adjust": False}
+        if start or end:
+            if start:
+                kwargs["start"] = start
+            if end:
+                kwargs["end"] = end
+        else:
+            kwargs["period"] = period
+        data = ticker.history(**kwargs)
+        if not isinstance(data, pd.DataFrame):
+            return pd.DataFrame()
+        return data
+
+    def _map_timeframe(self, tf: str) -> str:
+        mapping = {
+            "1Min": "1m",
+            "5Min": "5m",
+            "15Min": "15m",
+            "1h": "60m",
+            "1D": "1d",
+        }
+        return mapping.get(tf, "1m")
+
+
+class HybridMarketDataClient:
+    def __init__(self, alpaca_client: MarketDataClient, yahoo_client: YahooMarketDataClient, recency_hours: int = 48) -> None:
+        self.alpaca_client = alpaca_client
+        self.yahoo_client = yahoo_client
+        self.recency_cutoff = timedelta(hours=recency_hours)
+
+    async def latest_bar(self, symbol: str, timeframe: str = "1Min") -> Candle:
+        return await self.alpaca_client.latest_bar(symbol, timeframe=timeframe)
+
+    async def historical_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: str,
+        end: str | None = None,
+        limit: int = 1000,
+    ) -> Sequence[Candle]:
+        if self._use_yahoo(start):
+            return await self.yahoo_client.historical_bars(symbol, timeframe, start=start, end=end, limit=limit)
+        try:
+            return await self.alpaca_client.historical_bars(symbol, timeframe, start=start, end=end, limit=limit)
+        except Exception:
+            return await self.yahoo_client.historical_bars(symbol, timeframe, start=start, end=end, limit=limit)
+
+    async def multi_timeframe(
+        self,
+        symbol: str,
+        timeframes: Iterable[str],
+        start: str,
+        end: str | None = None,
+        limit: int = 1000,
+    ) -> Mapping[str, Sequence[Candle]]:
+        results: dict[str, Sequence[Candle]] = {}
+        for tf in timeframes:
+            results[tf] = await self.historical_bars(symbol, tf, start=start, end=end, limit=limit)
+        return results
+
+    def _use_yahoo(self, start: str | None) -> bool:
+        if not start:
+            return False
+        try:
+            parsed = datetime.fromisoformat(start)
+        except ValueError:
+            return False
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        return now - parsed > self.recency_cutoff
 
 
 class _SimpleResponse:

@@ -34,22 +34,29 @@ class WebSearchClientTests(unittest.IsolatedAsyncioTestCase):
         response = DummyResponse(
             200,
             {
-                "value": [
-                    {"title": "TSLA earnings beat", "snippet": "Record EPS guidance"},
-                    {"title": "TSLA faces lawsuit", "snippet": "Class action filed"},
-                    {"title": "FDA approves new drug", "snippet": "Phase 3 success"},
-                    {"title": "Macro update", "snippet": "Fed rate hike expected"},
-                    {"title": "Unusual activity spotted", "snippet": "Spike in mentions"},
-                ]
+                "news": {
+                    "results": [
+                        {"title": "TSLA earnings beat", "snippet": "Record EPS guidance"},
+                        {"title": "TSLA faces lawsuit", "snippet": "Class action filed"},
+                        {"title": "FDA approves new drug", "snippet": "Phase 3 success"},
+                        {"title": "Macro update", "snippet": "Fed rate hike expected"},
+                    ]
+                },
+                "discussions": {
+                    "results": [
+                        {"title": "Unusual activity spotted", "snippet": "Spike in mentions"},
+                        {"title": "Social chatter", "body": "reddit thread"},
+                    ]
+                },
             },
         )
         dummy_client = DummyAsyncClient(response)
         client = WebSearchClient(api_key="k", http_client=dummy_client)
 
-        signals = await client.search("TSLA earnings", count=5)
+        signals = await client.search("TSLA earnings", count=6, result_filter="news,discussions,web")
 
         self.assertIsInstance(signals, SearchSignals)
-        self.assertEqual(signals.total_results, 5)
+        self.assertEqual(signals.total_results, 6)
         self.assertTrue(signals.earnings)
         self.assertTrue(signals.lawsuits)
         self.assertTrue(signals.fda)
@@ -58,9 +65,11 @@ class WebSearchClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("earnings", signals.matched_categories)
         self.assertIn("unusual", signals.matched_categories)
         self.assertEqual(dummy_client.last_request["params"]["q"], "TSLA earnings")
+        self.assertEqual(dummy_client.last_request["params"]["count"], 6)
+        self.assertEqual(dummy_client.last_request["params"]["result_filter"], "news,discussions,web")
 
     async def test_search_empty_results(self) -> None:
-        response = DummyResponse(200, {"value": []})
+        response = DummyResponse(200, {"news": {"results": []}, "discussions": {"results": []}})
         dummy_client = DummyAsyncClient(response)
         client = WebSearchClient(api_key="k", http_client=dummy_client)
 
