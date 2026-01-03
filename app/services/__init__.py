@@ -17,6 +17,7 @@ from .market_data import Candle, MarketDataClient
 from .risk import PositionSize, RiskGovernor, RiskGovernorState
 from .search import SearchSignals, WebSearchClient
 from .symbols import SymbolService
+from .trading import TradingDecision, TradingOrchestrator, build_trading_orchestrator
 
 __all__ = [
     "AIEvaluationResult",
@@ -42,5 +43,8 @@ __all__ = [
     "TakeProfit",
     "SymbolService",
     "TimeInForce",
+    "TradingDecision",
+    "TradingOrchestrator",
+    "build_trading_orchestrator",
     "WebSearchClient",
 ]

@@ -18,6 +18,12 @@ async function fetchJson(url) {
   return await res.json();
 }
 
+function csrfToken() {
+  const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('XSRF-TOKEN='));
+  if (!match) return null;
+  return decodeURIComponent(match.split('=')[1]);
+}
+
 async function loadData() {
   try {
     const [candles, trades, stats, drawdown, strategies, symbols, adminSymbols, rules] = await Promise.all([
@@ -46,6 +52,15 @@ async function loadData() {
 
 function renderCandles(data) {
   const ctx = document.getElementById('candleChart');
+  if (!ctx) return;
+  if (!data || data.length === 0) {
+    const parent = ctx.parentElement;
+    if (parent) {
+      parent.innerHTML = '';
+      parent.appendChild(emptyState('No candle data yet'));
+    }
+    return;
+  }
   const times = data.map(d => new Date(d.t).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}));
   const closes = data.map(d => d.c);
   const gradient = ctx.getContext('2d').createLinearGradient(0,0,0,300);
@@ -71,6 +86,13 @@ function renderCandles(data) {
 
 function renderDrawdown(data) {
   const ctx = document.getElementById('drawdownChart');
+  if (!ctx) return;
+  if (!data || data.length === 0) {
+    const parent = ctx.parentElement;
+    if (parent) parent.innerHTML = '';
+    if (parent) parent.appendChild(emptyState('No drawdown data yet'));
+    return;
+  }
   new Chart(ctx, {
     type: 'line',
     data: { labels: data.map(d => new Date(d.t)), datasets: [{ label: 'Drawdown', data: data.map(d => d.dd * 100), borderColor: palette.negative, backgroundColor: 'rgba(239,68,68,0.12)', tension: 0.25, fill: true }] },
@@ -88,6 +110,13 @@ function renderDrawdown(data) {
 
 function renderWinLoss(stats) {
   const ctx = document.getElementById('winLossChart');
+  if (!ctx) return;
+  if (!stats || (stats.win_rate === 0 && stats.loss_rate === 0)) {
+    const parent = ctx.parentElement;
+    if (parent) parent.innerHTML = '';
+    if (parent) parent.appendChild(emptyState('No trades yet'));
+    return;
+  }
   new Chart(ctx, {
     type: 'doughnut',
     data: {
@@ -108,6 +137,13 @@ function renderWinLoss(stats) {
 
 function renderStrategies(data) {
   const ctx = document.getElementById('strategyChart');
+  if (!ctx) return;
+  if (!data || data.length === 0) {
+    const parent = ctx.parentElement;
+    if (parent) parent.innerHTML = '';
+    if (parent) parent.appendChild(emptyState('No strategy data'));
+    return;
+  }
   new Chart(ctx, {
     type: 'bar',
     data: {
@@ -131,6 +167,13 @@ function renderStrategies(data) {
 
 function renderSymbols(data) {
   const ctx = document.getElementById('symbolChart');
+  if (!ctx) return;
+  if (!data || data.length === 0) {
+    const parent = ctx.parentElement;
+    if (parent) parent.innerHTML = '';
+    if (parent) parent.appendChild(emptyState('No symbol performance yet'));
+    return;
+  }
   new Chart(ctx, {
     type: 'bar',
     data: {
@@ -152,6 +195,15 @@ function renderSymbols(data) {
 function renderTrades(trades) {
   const tbody = document.querySelector('#tradesTable tbody');
   tbody.innerHTML = '';
+  if (!trades || trades.length === 0) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 7;
+    cell.textContent = 'No trades yet';
+    row.appendChild(cell);
+    tbody.appendChild(row);
+    return;
+  }
   trades.forEach(t => {
     const row = document.createElement('tr');
     const cells = [
@@ -178,6 +230,10 @@ function renderTrades(trades) {
 
 function renderMetrics(stats) {
   const grid = document.getElementById('metricGrid');
+  if (!stats) {
+    grid.innerHTML = '';
+    return;
+  }
   const items = [
     { label: 'Realized P&L', value: '$' + formatNumber(stats.realized_pnl) },
     { label: 'Unrealized P&L', value: '$' + formatNumber(stats.unrealized_pnl) },
@@ -203,6 +259,13 @@ function renderMetrics(stats) {
   });
 }
 
+function emptyState(text) {
+  const el = document.createElement('div');
+  el.className = 'empty-state';
+  el.textContent = text;
+  return el;
+}
+
 function renderAdminSymbols(symbols) {
   const container = document.getElementById('symbolList');
   container.innerHTML = '';
@@ -216,7 +279,7 @@ function renderAdminSymbols(symbols) {
     toggle.addEventListener('click', async () => {
       await fetch(`/api/admin/symbols/${encodeURIComponent(s.symbol)}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...csrfHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !s.enabled }),
       });
       loadData().catch(() => {});
@@ -224,7 +287,7 @@ function renderAdminSymbols(symbols) {
     const remove = document.createElement('button');
     remove.textContent = 'Remove';
     remove.addEventListener('click', async () => {
-      await fetch(`/api/admin/symbols/${encodeURIComponent(s.symbol)}`, { method: 'DELETE' });
+      await fetch(`/api/admin/symbols/${encodeURIComponent(s.symbol)}`, { method: 'DELETE', headers: csrfHeaders() });
       loadData().catch(() => {});
     });
     pill.appendChild(label);
@@ -243,7 +306,7 @@ function bindSymbolForm() {
     if (!symbol) return;
     await fetch('/api/admin/symbols', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...csrfHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol }),
     });
     input.value = '';
@@ -257,6 +320,7 @@ function fillRulesForm(rules) {
   form.max_daily_loss.value = rules.max_daily_loss;
   form.max_trades_per_day.value = rules.max_trades_per_day;
   form.cooldown_seconds.value = rules.cooldown_seconds;
+  form.budget.value = rules.budget;
 }
 
 function bindRulesForm() {
@@ -268,14 +332,21 @@ function bindRulesForm() {
       max_daily_loss: parseFloat(form.max_daily_loss.value),
       max_trades_per_day: parseInt(form.max_trades_per_day.value, 10),
       cooldown_seconds: parseInt(form.cooldown_seconds.value, 10),
+      budget: parseFloat(form.budget.value),
     };
     await fetch('/api/admin/rules', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...csrfHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     loadData().catch(() => {});
   });
+}
+
+function csrfHeaders() {
+  const token = csrfToken();
+  if (!token) return {};
+  return { 'X-CSRFToken': token };
 }
 
 bindSymbolForm();

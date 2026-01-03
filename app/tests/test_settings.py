@@ -28,6 +28,7 @@ class SettingsTests(unittest.TestCase):
         self.assertIsInstance(settings, Settings)
         self.assertEqual(settings.database_url, env["DATABASE_URL"])
         self.assertEqual(settings.ai_api_key, env["AI_API_KEY"])
+        self.assertEqual(settings.ai_model, "qwen/qwen3-32b")
         self.assertEqual(settings.search_api_key, env["SEARCH_API_KEY"])
         self.assertEqual(settings.alpaca_api_key, env["ALPACA_API_KEY"])
         self.assertEqual(settings.alpaca_secret_key, env["ALPACA_SECRET_KEY"])

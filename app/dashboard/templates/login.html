@@ -23,6 +23,9 @@
       </div>
     {% endif %}
     <form method="post" class="auth-form">
+      {% if csrf_token %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      {% endif %}
       <label for="code">OTP Code</label>
       <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required />
       <button type="submit">Enter dashboard</button>

@@ -61,9 +61,13 @@ class AIClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.confidence, 0.82)
         self.assertEqual(result.matched_rules, ("rule-1",))
         self.assertEqual(result.risk_flags, ("drawdown",))
-        self.assertEqual(dummy_client.last_request["url"], "https://ai.hackclub.com/v1/chat/completions")
+        self.assertEqual(dummy_client.last_request["url"], "https://ai.hackclub.com/proxy/v1/chat/completions")
         self.assertEqual(dummy_client.last_request["headers"]["Authorization"], "Bearer test-key")
-        self.assertIn("input_json", dummy_client.last_request["json"]["messages"][0]["content"][0])
+        self.assertEqual(dummy_client.last_request["json"]["model"], "qwen/qwen3-32b")
+        self.assertEqual(dummy_client.last_request["json"]["messages"][0]["role"], "system")
+        self.assertEqual(dummy_client.last_request["json"]["messages"][1]["role"], "user")
+        self.assertEqual(dummy_client.last_request["json"]["response_format"], {"type": "json_object"})
+        self.assertIn("features", json.loads(dummy_client.last_request["json"]["messages"][1]["content"]))
 
     async def test_classify_rejects_invalid_schema(self) -> None:
         bad_payload = {

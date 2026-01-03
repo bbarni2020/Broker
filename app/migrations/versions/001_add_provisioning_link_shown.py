@@ -1,8 +1,11 @@
-"""add provisioning link shown flag
+"""add provisioning link shown flag (kept for reference)
 
-Revision ID: 001
-Revises: 
-Create Date: 2026-01-02
+Revision ID: 0002
+Revises: 0001
+Create Date: 2026-01-02 12:01:00.000000
+
+This migration is a no-op since provisioning_link_shown is already
+included in the baseline schema (0001).
 
 """
 from typing import Sequence, Union
@@ -11,15 +14,15 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = '001'
-down_revision: Union[str, None] = None
+revision: str = '0002'
+down_revision: str = '0001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('dashboard_secrets', sa.Column('provisioning_link_shown', sa.Boolean(), nullable=False, server_default='false'))
+    pass
 
 
 def downgrade() -> None:
-    op.drop_column('dashboard_secrets', 'provisioning_link_shown')
+    pass

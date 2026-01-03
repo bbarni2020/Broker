@@ -12,7 +12,9 @@ from app.utils import ValidationResult, ValidationService
 class ValidationServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.service = ValidationService(
-            liquidity_threshold=1_000_000.0, min_bars_for_indicators=50
+            liquidity_threshold=1_000_000.0,
+            min_bars_for_indicators=50,
+            now_provider=lambda: datetime(2026, 1, 2, 15, 0, tzinfo=timezone.utc),
         )
 
     def test_passes_valid_trade(self) -> None:
@@ -249,6 +251,46 @@ class ValidationServiceTests(unittest.TestCase):
         self.assertIn("blackout_window", result.hard_rule_violations)
         self.assertIn("trading_halted", result.hard_rule_violations)
         self.assertIn("insufficient_bars_for_indicators", result.hard_rule_violations)
+
+    def test_respects_extended_hours_in_market_timezone(self) -> None:
+        service = ValidationService(
+            liquidity_threshold=1_000_000.0,
+            min_bars_for_indicators=50,
+            now_provider=lambda: datetime(2026, 1, 3, 0, 21, tzinfo=timezone.utc),
+        )
+        result = service.validate(
+            symbol="EXT",
+            current_price=150.0,
+            volume_24h=5_000_000.0,
+            latest_bars=pd.DataFrame({"close": range(100)}),
+            market_regime="normal",
+            has_earnings_today=False,
+            has_fda_event=False,
+            is_trading_halted=False,
+            use_extended_hours=True,
+        )
+        self.assertTrue(result.passed)
+        self.assertNotIn("market_closed", result.hard_rule_violations)
+
+    def test_blocks_outside_extended_hours(self) -> None:
+        service = ValidationService(
+            liquidity_threshold=1_000_000.0,
+            min_bars_for_indicators=50,
+            now_provider=lambda: datetime(2026, 1, 3, 1, 1, tzinfo=timezone.utc),
+        )
+        result = service.validate(
+            symbol="EXT",
+            current_price=150.0,
+            volume_24h=5_000_000.0,
+            latest_bars=pd.DataFrame({"close": range(100)}),
+            market_regime="normal",
+            has_earnings_today=False,
+            has_fda_event=False,
+            is_trading_halted=False,
+            use_extended_hours=True,
+        )
+        self.assertFalse(result.passed)
+        self.assertIn("market_closed", result.hard_rule_violations)
 
 
 if __name__ == "__main__":

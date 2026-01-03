@@ -1,5 +1,3 @@
-"""Environment-backed application settings with strict validation."""
-
 from __future__ import annotations
 
 import logging
@@ -31,6 +29,7 @@ def _read_env_var(name: str, env: Mapping[str, str | None]) -> str:
 class Settings:
     database_url: str
     ai_api_key: str
+    ai_model: str
     search_api_key: str
     alpaca_api_key: str
     alpaca_secret_key: str
@@ -42,7 +41,6 @@ class Settings:
 
 
 def load_settings(env: Mapping[str, str | None] | None = None) -> Settings:
-    """Load and validate environment variables into a Settings object."""
     source_env = os.environ if env is None else env
 
     missing = [key for key in REQUIRED_ENV_VARS if not str(source_env.get(key) or "").strip()]
@@ -54,6 +52,7 @@ def load_settings(env: Mapping[str, str | None] | None = None) -> Settings:
     settings = Settings(
         database_url=_read_env_var("DATABASE_URL", source_env),
         ai_api_key=_read_env_var("AI_API_KEY", source_env),
+        ai_model=str(source_env.get("AI_MODEL", "qwen/qwen3-32b")).strip() or "qwen/qwen3-32b",
         search_api_key=_read_env_var("SEARCH_API_KEY", source_env),
         alpaca_api_key=_read_env_var("ALPACA_API_KEY", source_env),
         alpaca_secret_key=_read_env_var("ALPACA_SECRET_KEY", source_env),

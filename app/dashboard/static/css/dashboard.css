@@ -130,6 +130,13 @@ header {
   border-bottom: 1px solid var(--border);
   text-align: left;
 }
+
+.empty-state {
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 1.5rem 0;
+}
 .badge-positive { color: var(--positive); }
 .badge-negative { color: var(--negative); }
 .chart-container {

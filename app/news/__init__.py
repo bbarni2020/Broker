@@ -1,1 +1,3 @@
-"""News and sentiment ingestion pipelines."""
+from .client import SearchSignals, WebSearchClient
+
+__all__ = ["SearchSignals", "WebSearchClient"]

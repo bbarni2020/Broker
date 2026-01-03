@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, time, timezone
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 import os
 
 import pandas as pd
+from zoneinfo import ZoneInfo
 
 
 @dataclass(frozen=True)
@@ -21,15 +22,19 @@ class ValidationService:
     MARKET_CLOSE = time(16, 0)
     EXTENDED_OPEN = time(4, 0)
     EXTENDED_CLOSE = time(20, 0)
+    MARKET_TZ = ZoneInfo("America/New_York")
 
     def __init__(
         self,
         liquidity_threshold: float = 1_000_000.0,
         min_bars_for_indicators: int = 50,
+        now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self.liquidity_threshold = liquidity_threshold
         self.min_bars_for_indicators = min_bars_for_indicators
         self.enforce_market_hours = str(os.environ.get("APP_ENV", "development")) != "test"
+        self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
+        self.market_tz = self.MARKET_TZ
 
     def validate(
         self,
@@ -89,8 +94,10 @@ class ValidationService:
     def _check_market_hours(self, use_extended_hours: bool) -> bool:
         if not self.enforce_market_hours:
             return False
-        now = datetime.now(timezone.utc)
-        current_time = now.time()
+        now = self.now_provider().astimezone(self.market_tz)
+        current_time = now.time().replace(tzinfo=None)
+        if now.weekday() >= 5:
+            return True
         if use_extended_hours:
             return not (self.EXTENDED_OPEN <= current_time < self.EXTENDED_CLOSE)
         return not (self.MARKET_OPEN <= current_time < self.MARKET_CLOSE)

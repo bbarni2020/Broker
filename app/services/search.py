@@ -1,5 +1,3 @@
-"""Web search client for news-derived signals."""
-
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +8,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
-BASE_URL = "https://ai.hackclub.com"
+BASE_URL = "https://search.hackclub.com"
 SEARCH_PATH = "/res/v1/web/search"
 
 

@@ -1,17 +1,22 @@
-"""AI client compatible with OpenAI-style chat completions."""
-
 from __future__ import annotations
 
 import asyncio
 import json
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-BASE_URL = "https://ai.hackclub.com"
-MODEL = "gpt-4.1-mini"
+from openrouter import OpenRouter
+
+BASE_URL = "https://ai.hackclub.com/proxy"
+MODEL = "qwen/qwen3-32b"
 DECISIONS = {"LONG", "SHORT", "NO_TRADE"}
+SYSTEM_PROMPT = (
+    "You are a trading decision engine. Respond with a single JSON object only. "
+    "Schema: {\"decision\": string one of LONG|SHORT|NO_TRADE, \"confidence\": number 0-1, "
+    "\"matched_rules\": array of strings, \"violated_rules\": array of strings, "
+    "\"risk_flags\": array of strings, \"explanation\": non-empty string}. "
+    "No prose, no code fences, no additional keys."
+)
 
 
 @dataclass(frozen=True)
@@ -81,6 +86,7 @@ class AIClient:
         self.model = model
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
+        self._openrouter = None if http_client else OpenRouter(api_key=self.api_key, server_url=f"{self.base_url}/v1")
 
     async def classify(self, payload: Mapping[str, Any]) -> AIDecision:
         if not isinstance(payload, Mapping):
@@ -93,17 +99,18 @@ class AIClient:
                 json=body,
                 timeout=self.timeout_seconds,
             )
+            status = response.status_code
+            content = response.json() if hasattr(response, "json") else {}
         else:
-            response = await asyncio.to_thread(
-                self._post_with_urllib,
-                f"{self.base_url}/v1/chat/completions",
-                body,
-            )
+            content = await asyncio.to_thread(self._send_with_openrouter, body)
+            status = 200
 
-        if response.status_code != 200:
-            raise RuntimeError(f"AI service error {response.status_code}")
+        if status != 200:
+            detail = content.get("error") if isinstance(content, Mapping) else None
+            suffix = f": {detail}" if detail else ""
+            raise RuntimeError(f"AI service error {status}{suffix}")
 
-        decision_payload = self._extract_decision_payload(response.json())
+        decision_payload = self._extract_decision_payload(content)
         return AIDecision.from_dict(decision_payload)
 
     def _headers(self) -> Mapping[str, str]:
@@ -117,37 +124,42 @@ class AIClient:
             "model": self.model,
             "messages": [
                 {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT,
+                },
+                {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "input_json",
-                            "input_json": payload,
-                        }
-                    ],
-                }
+                    "content": json.dumps(payload),
+                },
             ],
+            "stream": False,
             "response_format": {"type": "json_object"},
         }
 
-    def _post_with_urllib(self, url: str, body: Mapping[str, Any]):
-        request_body = json.dumps(body).encode("utf-8")
-        request = urllib.request.Request(url, data=request_body, headers=dict(self._headers()))
+    def _send_with_openrouter(self, body: Mapping[str, Any]) -> Mapping[str, Any]:
+        if self._openrouter is None:
+            raise RuntimeError("OpenRouter client unavailable")
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                status = response.getcode()
-                content_bytes = response.read()
-        except urllib.error.HTTPError as exc:
-            status = exc.code
-            content_bytes = exc.read()
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"AI service unreachable: {exc.reason}") from exc
+            response = self._openrouter.chat.send(
+                model=body.get("model", self.model),
+                messages=body.get("messages", []),
+                stream=False,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"AI service unreachable: {exc}") from exc
 
-        try:
-            content_json = json.loads(content_bytes.decode("utf-8"))
-        except json.JSONDecodeError:
-            content_json = {}
-
-        return _SimpleResponse(status, content_json)
+        if hasattr(response, "model_dump"):
+            return response.model_dump()
+        if hasattr(response, "dict"):
+            try:
+                return response.dict()
+            except TypeError:
+                pass
+        if hasattr(response, "to_dict"):
+            return response.to_dict()
+        if isinstance(response, Mapping):
+            return response
+        raise RuntimeError("AI service returned unsupported response type")
 
     def _extract_decision_payload(self, response_json: Mapping[str, Any]) -> Mapping[str, Any]:
         if not isinstance(response_json, Mapping):
@@ -171,12 +183,3 @@ class AIClient:
                 if isinstance(output, Mapping):
                     return output
         raise ValueError("AI content is missing structured JSON")
-
-
-class _SimpleResponse:
-    def __init__(self, status_code: int, payload: Mapping[str, Any]):
-        self.status_code = status_code
-        self._payload = payload
-
-    def json(self) -> Mapping[str, Any]:
-        return self._payload

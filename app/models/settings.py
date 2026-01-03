@@ -13,6 +13,7 @@ class BaseRules(Base):
     max_daily_loss = Column(Float, nullable=False, default=0.05)
     max_trades_per_day = Column(Integer, nullable=False, default=10)
     cooldown_seconds = Column(Integer, nullable=False, default=300)
+    budget = Column(Float, nullable=False, default=100000.0)
 
 
 class DashboardSecret(Base):

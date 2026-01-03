@@ -33,6 +33,14 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-broker}:${POSTGRES_PASSWORD:-broker}@db:5432/${POSTGRES_DB:-broker}
       APP_ENV: ${APP_ENV:-development}
+      AI_API_KEY: ${AI_API_KEY}
+      SEARCH_API_KEY: ${SEARCH_API_KEY}
+      ALPACA_API_KEY: ${ALPACA_API_KEY}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      OTP_ISSUER_NAME: ${OTP_ISSUER_NAME}
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      TRADING_LIVE_CONFIRM: ${TRADING_LIVE_CONFIRM:-false}
     ports:
       - "8000:8000"
     depends_on:
@@ -45,6 +53,30 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  trader:
+    build: .
+    command: ["python", "-m", "app.trader"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-broker}:${POSTGRES_PASSWORD:-broker}@db:5432/${POSTGRES_DB:-broker}
+      APP_ENV: ${APP_ENV:-development}
+      AI_API_KEY: ${AI_API_KEY}
+      SEARCH_API_KEY: ${SEARCH_API_KEY}
+      ALPACA_API_KEY: ${ALPACA_API_KEY}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      OTP_ISSUER_NAME: ${OTP_ISSUER_NAME}
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      TRADING_LIVE_CONFIRM: ${TRADING_LIVE_CONFIRM:-false}
+      TRADER_POLL_INTERVAL: ${TRADER_POLL_INTERVAL:-300}
+      TRADER_SYMBOLS: ${TRADER_SYMBOLS:-}
+      TRADER_USE_EXTENDED_HOURS: ${TRADER_USE_EXTENDED_HOURS:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   dashboard:
     build: .
