@@ -26,6 +26,7 @@ from app.services.execution import (
 )
 from app.services.guides import GuideEvaluation, GuideService
 from app.services.market_data import Candle, HybridMarketDataClient, MarketDataClient, YahooMarketDataClient
+from app.services.news_sentiment import NewsSentimentEvaluator, NewsSentimentResult
 from app.services.risk import PositionSize, RiskGovernor
 from app.services.search import SearchSignals, WebSearchClient
 from app.utils import ValidationResult, ValidationService
@@ -40,6 +41,7 @@ class TradingDecision:
     indicators: Mapping[str, float]
     validation: ValidationResult
     search_signals: Mapping[str, Any]
+    news_sentiment: NewsSentimentResult | None
     guide_evaluation: GuideEvaluation | None
     ai_result: AIEvaluationResult
     risk_position: PositionSize | None
@@ -55,6 +57,7 @@ class TradingOrchestrator:
         search_client: WebSearchClient,
         ai_service: AIEvaluationService,
         validation_service: ValidationService,
+        news_sentiment_evaluator: NewsSentimentEvaluator,
         risk_governor: RiskGovernor,
         execution_service: ExecutionService,
         guide_service: GuideService | None = None,
@@ -66,6 +69,7 @@ class TradingOrchestrator:
         self.search_client = search_client
         self.ai_service = ai_service
         self.validation_service = validation_service
+        self.news_sentiment_evaluator = news_sentiment_evaluator
         self.risk_governor = risk_governor
         self.execution_service = execution_service
         self.guide_service = guide_service
@@ -95,6 +99,7 @@ class TradingOrchestrator:
                 indicators={},
                 validation=validation,
                 search_signals={},
+                news_sentiment=None,
                 guide_evaluation=None,
                 ai_result=ai_result,
                 risk_position=None,
@@ -121,6 +126,8 @@ class TradingOrchestrator:
             use_extended_hours=use_extended_hours,
         )
         self._record_validation(symbol, validation)
+
+        news_sentiment = self.news_sentiment_evaluator.evaluate(symbol, search_signals)
 
         guide, guide_eval = self._evaluate_guide(strategy, search_signals)
 
@@ -154,8 +161,10 @@ class TradingOrchestrator:
             final_decision = "NO_TRADE"
             execution_reason = "existing_position_open"
             executed_order = None
-        elif not validation.passed or not risk_ok or not ai_result.passed_level_1:
+        elif not validation.passed or not news_sentiment.passed or not risk_ok or not ai_result.passed_level_1:
             final_decision = "NO_TRADE"
+            if not news_sentiment.passed:
+                execution_reason = f"news_sentiment_rejection: {news_sentiment.rejection_reason}"
         elif execute and self.allow_execution and position:
             side = "buy" if ai_result.decision == "LONG" else "sell"
             order_request = OrderRequest(
@@ -181,6 +190,8 @@ class TradingOrchestrator:
             execution_reason,
             {
                 "validation_passed": validation.passed,
+                "news_sentiment_passed": news_sentiment.passed,
+                "news_risk_level": news_sentiment.risk_level,
                 "risk_ok": risk_ok,
                 "execute_requested": execute,
                 "execution_allowed": self.allow_execution,
@@ -195,6 +206,7 @@ class TradingOrchestrator:
             indicators=indicators,
             validation=validation,
             search_signals=search_signals,
+            news_sentiment=news_sentiment,
             guide_evaluation=guide_eval,
             ai_result=ai_result,
             risk_position=position if risk_ok else None,
@@ -351,6 +363,7 @@ def build_trading_orchestrator(
     audit_logger = AuditLogger(session)
     guide_service = GuideService()
     validation_service = ValidationService()
+    news_sentiment_evaluator = NewsSentimentEvaluator(audit_logger=audit_logger)
     account_size = budget if budget and budget > 0 else 100_000.0
     risk_governor = RiskGovernor(account_size=account_size)
     execution_client = AlpacaExecutionClient(
@@ -367,6 +380,7 @@ def build_trading_orchestrator(
         search_client=search_client,
         ai_service=ai_service,
         validation_service=validation_service,
+        news_sentiment_evaluator=news_sentiment_evaluator,
         risk_governor=risk_governor,
         execution_service=execution_service,
         guide_service=guide_service,

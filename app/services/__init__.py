@@ -14,6 +14,7 @@ from .execution import (
 )
 from .guides import GuideEvaluation, GuidePayload, GuideService
 from .market_data import Candle, MarketDataClient
+from .news_sentiment import NewsSentimentEvaluator, NewsSentimentResult
 from .risk import PositionSize, RiskGovernor, RiskGovernorState
 from .search import SearchSignals, WebSearchClient
 from .symbols import SymbolService
@@ -32,6 +33,8 @@ __all__ = [
     "GuidePayload",
     "GuideService",
     "MarketDataClient",
+    "NewsSentimentEvaluator",
+    "NewsSentimentResult",
     "OrderRequest",
     "OrderStatus",
     "OrderType",

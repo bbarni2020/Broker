@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 from app.services.ai_evaluation import AIEvaluationResult
 from app.services.execution import ExecutedOrder, OrderStatus
 from app.services.market_data import Candle
+from app.services.news_sentiment import NewsSentimentResult
 from app.services.search import SearchSignals
 from app.services.trading import TradingDecision, TradingOrchestrator
 from app.services.risk import PositionSize
@@ -104,6 +105,23 @@ class DummyValidationService:
         return ValidationResult(self.passed, violations, ())
 
 
+class DummyNewsSentimentEvaluator:
+    def __init__(self, passed: bool = True, risk_level: str = "low") -> None:
+        self.passed = passed
+        self.risk_level = risk_level
+
+    def evaluate(self, symbol: str, search_signals: Mapping[str, Any]) -> NewsSentimentResult:
+        return NewsSentimentResult(
+            symbol=symbol,
+            passed=self.passed,
+            risk_level=self.risk_level,
+            rejection_reason="test_reason" if not self.passed else "no_major_risks",
+            signals_detected=(),
+            total_mentions=5,
+            sentiment_score=0.5,
+        )
+
+
 class DummyRiskGovernor:
     def __init__(self, approves: bool = True) -> None:
         self.approves = approves
@@ -185,6 +203,7 @@ class TradingOrchestratorTests(unittest.IsolatedAsyncioTestCase):
             search_client=DummySearchClient(),
             ai_service=DummyAIService(),
             validation_service=DummyValidationService(),
+            news_sentiment_evaluator=DummyNewsSentimentEvaluator(),
             risk_governor=DummyRiskGovernor(),
             execution_service=DummyExecutionService(),
             allow_execution=True,
@@ -205,6 +224,7 @@ class TradingOrchestratorTests(unittest.IsolatedAsyncioTestCase):
             search_client=DummySearchClient(),
             ai_service=DummyAIService(),
             validation_service=DummyValidationService(),
+            news_sentiment_evaluator=DummyNewsSentimentEvaluator(),
             risk_governor=DummyRiskGovernor(),
             execution_service=execution,
             allow_execution=False,
@@ -223,6 +243,7 @@ class TradingOrchestratorTests(unittest.IsolatedAsyncioTestCase):
             search_client=DummySearchClient(),
             ai_service=DummyAIService(),
             validation_service=DummyValidationService(passed=False),
+            news_sentiment_evaluator=DummyNewsSentimentEvaluator(),
             risk_governor=DummyRiskGovernor(),
             execution_service=DummyExecutionService(),
             allow_execution=True,
@@ -233,6 +254,27 @@ class TradingOrchestratorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decision.final_decision, "NO_TRADE")
         self.assertIsNone(decision.executed_order)
         self.assertEqual(decision.validation.passed, False)
+
+    async def test_blocks_on_news_sentiment_failure(self) -> None:
+        bars = sample_bars("NFLX")
+        orchestrator = TradingOrchestrator(
+            market_data_client=DummyMarketDataClient(bars),
+            search_client=DummySearchClient(),
+            ai_service=DummyAIService(),
+            validation_service=DummyValidationService(),
+            news_sentiment_evaluator=DummyNewsSentimentEvaluator(passed=False, risk_level="high"),
+            risk_governor=DummyRiskGovernor(),
+            execution_service=DummyExecutionService(),
+            allow_execution=True,
+        )
+
+        decision = await orchestrator.run("NFLX", strategy=None, execute=True)
+
+        self.assertEqual(decision.final_decision, "NO_TRADE")
+        self.assertIsNone(decision.executed_order)
+        self.assertIsNotNone(decision.news_sentiment)
+        self.assertEqual(decision.news_sentiment.passed, False)
+        self.assertEqual(decision.news_sentiment.risk_level, "high")
 
 
 if __name__ == "__main__":
